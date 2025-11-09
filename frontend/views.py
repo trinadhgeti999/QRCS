@@ -289,10 +289,24 @@ def update_incident_status(request, incident_id):
             
             return redirect('frontend:incident_detail', incident_id=incident.id)
     
+    # Filter status choices based on user role
+    # Admins can see all statuses
+    # Responders can only see: in_progress, resolved, closed
+    if is_admin:
+        status_choices = Incident.STATUS_CHOICES
+    else:
+        # Responder - only show in_progress, resolved, closed
+        status_choices = [
+            ('in_progress', 'In Progress'),
+            ('resolved', 'Resolved'),
+            ('closed', 'Closed'),
+        ]
+    
     context = {
         'incident': incident,
-        'status_choices': Incident.STATUS_CHOICES,
+        'status_choices': status_choices,
         'severity_choices': Incident.SEVERITY_CHOICES,
+        'is_admin': is_admin,
     }
     return render(request, 'frontend/update_status.html', context)
 
@@ -357,3 +371,77 @@ def team_detail(request, team_id):
         'can_edit': request.user.is_staff or request.user.role == 'admin',
     }
     return render(request, 'frontend/team_detail.html', context)
+
+
+@login_required
+def assign_responder(request):
+    """Assign a responder to an incident (Admin/Administrator only)."""
+    # Check if user is admin/administrator
+    is_admin = request.user.is_staff or request.user.role == 'admin'
+    
+    if not is_admin:
+        messages.error(request, 'Only administrators can assign responders.')
+        return redirect('frontend:homepage')
+    
+    # Pre-select incident if provided in query params
+    preselected_incident_id = request.GET.get('incident', None)
+    if preselected_incident_id:
+        try:
+            preselected_incident_id = int(preselected_incident_id)
+        except (ValueError, TypeError):
+            preselected_incident_id = None
+    
+    if request.method == 'POST':
+        incident_id = request.POST.get('incident')
+        responder_id = request.POST.get('responder')
+        notes = request.POST.get('notes', '')
+        is_lead = request.POST.get('is_lead') == 'on'
+        
+        if not incident_id or not responder_id:
+            messages.error(request, 'Please select both an incident and a responder.')
+        else:
+            try:
+                incident = get_object_or_404(Incident, id=incident_id)
+                responder = get_object_or_404(User, id=responder_id)
+                
+                # Validate responder role
+                if responder.role != 'responder':
+                    messages.error(request, f'{responder.username} is not a responder. Only users with role "Responder" can be assigned.')
+                # Validate incident status
+                elif incident.status not in ['reported']:
+                    messages.error(
+                        request, 
+                        f'Cannot assign responder to incident with status "{incident.get_status_display()}". Only incidents with status "Reported" can be assigned.'
+                    )
+                # Check if already assigned
+                elif ResponseTeam.objects.filter(incident=incident, responder=responder).exists():
+                    messages.warning(request, f'{responder.username} is already assigned to this incident.')
+                else:
+                    # Create assignment (signal will handle status update and notification)
+                    ResponseTeam.objects.create(
+                        incident=incident,
+                        responder=responder,
+                        assigned_by=request.user,
+                        notes=notes,
+                        is_lead=is_lead
+                    )
+                    messages.success(
+                        request, 
+                        f'Successfully assigned {responder.username} to incident {incident.incident_id}. The incident status has been updated to "Assigned".'
+                    )
+                    return redirect('frontend:incident_detail', incident_id=incident.id)
+            except Exception as e:
+                messages.error(request, f'Error assigning responder: {str(e)}')
+    
+    # Get only responders for dropdown
+    responders = User.objects.filter(role='responder', is_active=True).order_by('username')
+    
+    # Get only reported incidents for dropdown
+    reported_incidents = Incident.objects.filter(status='reported').order_by('-created_at')
+    
+    context = {
+        'responders': responders,
+        'incidents': reported_incidents,
+        'preselected_incident_id': preselected_incident_id,
+    }
+    return render(request, 'frontend/assign_responder.html', context)

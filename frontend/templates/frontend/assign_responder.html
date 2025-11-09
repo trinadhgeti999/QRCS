@@ -1,0 +1,89 @@
+{% extends 'frontend/base.html' %}
+
+{% block title %}Assign Responder - QRCS{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="mb-0"><i class="bi bi-person-plus"></i> Assign Responder to Incident</h3>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <div class="mb-3">
+                            <label for="incident" class="form-label">Incident <span class="text-danger">*</span></label>
+                            <select class="form-select form-select-lg" id="incident" name="incident" required>
+                                <option value="">Select an incident...</option>
+                                {% for incident in incidents %}
+                                <option value="{{ incident.id }}" {% if preselected_incident_id == incident.id %}selected{% endif %}>
+                                    {{ incident.incident_id }} - {{ incident.title }} ({{ incident.get_status_display }})
+                                </option>
+                                {% empty %}
+                                <option value="" disabled>No reported incidents available</option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">Only incidents with status "Reported" are shown. Already assigned or resolved incidents are excluded.</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="responder" class="form-label">Responder <span class="text-danger">*</span></label>
+                            <select class="form-select form-select-lg" id="responder" name="responder" required>
+                                <option value="">Select a responder...</option>
+                                {% for responder in responders %}
+                                <option value="{{ responder.id }}">
+                                    {{ responder.username }} 
+                                    {% if responder.email %}({{ responder.email }}){% endif %}
+                                    {% if not responder.is_available %}
+                                    <span class="text-muted">- Unavailable</span>
+                                    {% endif %}
+                                </option>
+                                {% empty %}
+                                <option value="" disabled>No responders available</option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">Only users with role "Responder" are shown.</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="notes" class="form-label">Notes (Optional)</label>
+                            <textarea class="form-control" id="notes" name="notes" rows="3" 
+                                      placeholder="Add any additional notes about this assignment..."></textarea>
+                        </div>
+
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="is_lead" name="is_lead">
+                            <label class="form-check-label" for="is_lead">
+                                Set as Team Lead
+                            </label>
+                            <small class="text-muted d-block">Team leads have additional responsibilities for coordinating the response.</small>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> <strong>Note:</strong> 
+                            <ul class="mb-0 mt-2">
+                                <li>The incident status will automatically change to "Assigned" when a responder is assigned.</li>
+                                <li>The assigned responder will receive a notification about this assignment.</li>
+                                <li>Only incidents with status "Reported" can be assigned.</li>
+                            </ul>
+                        </div>
+
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <a href="{% url 'frontend:homepage' %}" class="btn btn-secondary">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i> Assign Responder
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

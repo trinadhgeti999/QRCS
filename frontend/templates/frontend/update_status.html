@@ -41,7 +41,11 @@
                                 </option>
                                 {% endfor %}
                             </select>
+                            {% if not is_admin %}
+                            <small class="text-muted">Responders can only update status to: In Progress, Resolved, or Closed.</small>
+                            {% else %}
                             <small class="text-muted">Select the current status of this incident.</small>
+                            {% endif %}
                         </div>
 
                         <div class="mb-3">

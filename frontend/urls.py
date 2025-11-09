@@ -22,5 +22,6 @@ urlpatterns = [
     # Response Teams URLs
     path('teams/', views.team_list, name='team_list'),
     path('team/<int:team_id>/', views.team_detail, name='team_detail'),
+    path('assign-responder/', views.assign_responder, name='assign_responder'),
 ]
 

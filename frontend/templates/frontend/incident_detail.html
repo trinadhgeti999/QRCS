@@ -145,6 +145,25 @@
             </div>
             {% endif %}
 
+            <!-- Assign Responder (Admin/Administrator only) -->
+            {% if user.is_authenticated %}
+            {% if user.is_staff or user.role == 'admin' %}
+            {% if incident.status == 'reported' %}
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-person-plus"></i> Assign Responder</h5>
+                </div>
+                <div class="card-body">
+                    <a href="{% url 'frontend:assign_responder' %}?incident={{ incident.id }}" class="btn btn-success w-100">
+                        <i class="bi bi-person-plus"></i> Assign Responder to This Incident
+                    </a>
+                    <p class="text-muted mt-2 mb-0 small">Assign a responder to handle this incident.</p>
+                </div>
+            </div>
+            {% endif %}
+            {% endif %}
+            {% endif %}
+
             <!-- Quick Actions -->
             <div class="card">
                 <div class="card-header">
