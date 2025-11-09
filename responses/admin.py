@@ -22,6 +22,12 @@ class ResponseTeamAdminForm(forms.ModelForm):
             is_active=True
         ).order_by('username')
         
+        # Filter assigned_by field to only show users with role='admin' (Administrator)
+        self.fields['assigned_by'].queryset = User.objects.filter(
+            role='admin',
+            is_active=True
+        ).order_by('username')
+        
         # Filter incident field to only show incidents with status='reported'
         self.fields['incident'].queryset = Incident.objects.filter(
             status='reported'
@@ -49,6 +55,12 @@ class ResponseTeamAdmin(admin.ModelAdmin):
             # Only show users with role='responder'
             kwargs['queryset'] = User.objects.filter(
                 role='responder',
+                is_active=True
+            ).order_by('username')
+        elif db_field.name == 'assigned_by':
+            # Only show users with role='admin' (Administrator)
+            kwargs['queryset'] = User.objects.filter(
+                role='admin',
                 is_active=True
             ).order_by('username')
         elif db_field.name == 'incident':
