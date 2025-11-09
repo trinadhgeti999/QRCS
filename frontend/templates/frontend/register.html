@@ -1,0 +1,66 @@
+{% extends 'frontend/base.html' %}
+
+{% block title %}Register - QRCS{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="mb-0"><i class="bi bi-person-plus"></i> Create Account</h3>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="username" name="username" required 
+                                   placeholder="Choose a username" autofocus>
+                            <small class="text-muted">Required. 150 characters or fewer. Letters, digits and @/./+/-/_ only.</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email Address <span class="text-danger">*</span></label>
+                            <input type="email" class="form-control" id="email" name="email" required 
+                                   placeholder="your.email@example.com">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="password1" class="form-label">Password <span class="text-danger">*</span></label>
+                            <input type="password" class="form-control" id="password1" name="password1" required 
+                                   placeholder="Enter password (min. 8 characters)">
+                            <small class="text-muted">Your password must contain at least 8 characters.</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="password2" class="form-label">Confirm Password <span class="text-danger">*</span></label>
+                            <input type="password" class="form-control" id="password2" name="password2" required 
+                                   placeholder="Confirm your password">
+                        </div>
+
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> <strong>Note:</strong> By registering, you agree to use this system responsibly for reporting legitimate incidents only.
+                        </div>
+
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <a href="{% url 'frontend:homepage' %}" class="btn btn-secondary">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-person-check"></i> Register
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="card-footer text-center">
+                    <p class="mb-0">Already have an account? <a href="{% url 'frontend:login' %}">Login here</a></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+

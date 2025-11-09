@@ -1,0 +1,164 @@
+{% extends 'frontend/base.html' %}
+
+{% block title %}Team Details - {{ team.responder.username }} - QRCS{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <div class="row">
+        <div class="col-lg-8">
+            <!-- Team Assignment Info -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="bi bi-person-badge"></i> Responder: {{ team.responder.username }}
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong><i class="bi bi-envelope"></i> Email:</strong>
+                            <p>{{ team.responder.email|default:"Not provided" }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <strong><i class="bi bi-briefcase"></i> Role:</strong>
+                            <p><span class="badge bg-info">{{ team.responder.get_role_display }}</span></p>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong><i class="bi bi-check-circle"></i> Status:</strong>
+                            <p>
+                                {% if team.responder.is_available %}
+                                <span class="badge bg-success">Available</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Unavailable</span>
+                                {% endif %}
+                            </p>
+                        </div>
+                        <div class="col-md-6">
+                            <strong><i class="bi bi-calendar"></i> Assigned At:</strong>
+                            <p>{{ team.assigned_at|date:"F d, Y H:i" }}</p>
+                        </div>
+                    </div>
+                    
+                    {% if team.assigned_by %}
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <strong><i class="bi bi-person-check"></i> Assigned By:</strong>
+                            <p>{{ team.assigned_by.username }}</p>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if team.is_lead %}
+                    <div class="alert alert-warning">
+                        <i class="bi bi-star"></i> <strong>Team Lead</strong> for this incident
+                    </div>
+                    {% endif %}
+                    
+                    {% if team.notes %}
+                    <div class="mb-3">
+                        <strong><i class="bi bi-sticky"></i> Notes:</strong>
+                        <p class="border p-3 rounded">{{ team.notes }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Assigned Incident -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-exclamation-triangle"></i> Assigned Incident</h5>
+                </div>
+                <div class="card-body">
+                    <h5><a href="{% url 'frontend:incident_detail' team.incident.id %}" class="text-decoration-none">
+                        {{ team.incident.title }}
+                    </a></h5>
+                    <p class="text-muted">{{ team.incident.description|truncatewords:30 }}</p>
+                    <div class="d-flex gap-2 mb-2">
+                        <span class="badge bg-primary">{{ team.incident.get_status_display }}</span>
+                        <span class="badge bg-{% if team.incident.severity == 'critical' %}danger{% elif team.incident.severity == 'high' %}warning{% elif team.incident.severity == 'medium' %}info{% else %}secondary{% endif %}">
+                            {{ team.incident.get_severity_display }}
+                        </span>
+                    </div>
+                    <p class="mb-0">
+                        <i class="bi bi-geo-alt"></i> {{ team.incident.location_address }}
+                    </p>
+                    <a href="{% url 'frontend:incident_detail' team.incident.id %}" class="btn btn-sm btn-outline-primary mt-2">
+                        View Full Incident <i class="bi bi-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Response Logs -->
+            {% if response_logs %}
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-journal-text"></i> Response Activity</h5>
+                </div>
+                <div class="card-body">
+                    {% for log in response_logs %}
+                    <div class="border-start border-3 border-primary ps-3 mb-3">
+                        <div class="d-flex justify-content-between">
+                            <strong>{{ log.action }}</strong>
+                            <small class="text-muted">{{ log.timestamp|timesince }} ago</small>
+                        </div>
+                        <p class="mb-1">{{ log.details }}</p>
+                        <small class="text-muted">{{ log.timestamp|date:"F d, Y H:i" }}</small>
+                        {% if log.image %}
+                        <div class="mt-2">
+                            <img src="{{ log.image.url }}" class="img-thumbnail" style="max-width: 200px;" alt="Response image">
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-lg-4">
+            <!-- Other Assignments -->
+            {% if responder_teams %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-list-ul"></i> Other Assignments</h5>
+                </div>
+                <div class="list-group list-group-flush">
+                    {% for other_team in responder_teams|slice:":5" %}
+                    {% if other_team.id != team.id %}
+                    <a href="{% url 'frontend:team_detail' other_team.id %}" class="list-group-item list-group-item-action">
+                        <div class="d-flex justify-content-between">
+                            <strong>{{ other_team.incident.title|truncatewords:5 }}</strong>
+                            <small class="text-muted">{{ other_team.assigned_at|timesince }} ago</small>
+                        </div>
+                        <small class="text-muted">{{ other_team.incident.get_status_display }}</small>
+                    </a>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Quick Actions -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-lightning"></i> Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <a href="{% url 'frontend:incident_detail' team.incident.id %}" class="btn btn-primary w-100 mb-2">
+                        <i class="bi bi-eye"></i> View Incident
+                    </a>
+                    <a href="{% url 'frontend:team_list' %}" class="btn btn-outline-secondary w-100">
+                        <i class="bi bi-arrow-left"></i> Back to Teams
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+

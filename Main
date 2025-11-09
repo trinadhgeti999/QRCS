@@ -1,0 +1,835 @@
+# Quick Response Coordination System (QRCS) - Complete Django Project
+
+## Project Overview
+QRCS is an emergency response coordination system that enables quick reporting, tracking, and management of incidents with real-time coordination between responders and administrators.
+
+## Phase 1: Project Setup & Planning
+
+### 1.1 Requirements Analysis
+**Core Features:**
+- User authentication (Admin, Responder, Reporter roles)
+- Incident reporting with location tracking
+- Real-time status updates
+- Response team assignment
+- Dashboard with analytics
+- Notification system
+- Map-based incident visualization
+
+**Tech Stack:**
+- Django 5.0+
+- PostgreSQL (with PostGIS for location data)
+- Django REST Framework (API)
+- Celery (async tasks)
+- Redis (caching & task queue)
+- Leaflet.js (maps)
+- WebSockets (real-time updates)
+
+### 1.2 Project Initialization
+```bash
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install Django and dependencies
+pip install django djangorestframework django-cors-headers
+pip install psycopg2-binary pillow
+pip install celery redis django-celery-beat
+pip install channels channels-redis
+pip install django-filter djangorestframework-simplejwt
+
+# Create Django project
+django-admin startproject qrcs_project
+cd qrcs_project
+
+# Create apps
+python manage.py startapp accounts
+python manage.py startapp incidents
+python manage.py startapp responses
+python manage.py startapp notifications
+python manage.py startapp dashboard
+```
+
+## Phase 2: Database Design
+
+### 2.1 Models Structure
+
+**accounts/models.py**
+```python
+from django.contrib.auth.models import AbstractUser
+from django.db import models
+
+class User(AbstractUser):
+    ROLE_CHOICES = [
+        ('admin', 'Administrator'),
+        ('responder', 'Responder'),
+        ('reporter', 'Reporter'),
+    ]
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='reporter')
+    phone = models.CharField(max_length=15, blank=True)
+    address = models.TextField(blank=True)
+    avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
+    is_available = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'users'
+```
+
+**incidents/models.py**
+```python
+from django.db import models
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+class IncidentCategory(models.Model):
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    priority_level = models.IntegerField(default=1)
+    icon = models.CharField(max_length=50, blank=True)
+    
+    class Meta:
+        db_table = 'incident_categories'
+        verbose_name_plural = 'Incident Categories'
+
+class Incident(models.Model):
+    STATUS_CHOICES = [
+        ('reported', 'Reported'),
+        ('assigned', 'Assigned'),
+        ('in_progress', 'In Progress'),
+        ('resolved', 'Resolved'),
+        ('closed', 'Closed'),
+    ]
+    
+    SEVERITY_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+        ('critical', 'Critical'),
+    ]
+    
+    incident_id = models.CharField(max_length=20, unique=True, editable=False)
+    title = models.CharField(max_length=200)
+    description = models.TextField()
+    category = models.ForeignKey(IncidentCategory, on_delete=models.PROTECT)
+    reporter = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reported_incidents')
+    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='reported')
+    severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES, default='medium')
+    
+    latitude = models.DecimalField(max_digits=9, decimal_places=6)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6)
+    location_address = models.CharField(max_length=500)
+    
+    image = models.ImageField(upload_to='incidents/', null=True, blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    
+    def save(self, *args, **kwargs):
+        if not self.incident_id:
+            from datetime import datetime
+            self.incident_id = f"INC{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        super().save(*args, **kwargs)
+    
+    class Meta:
+        db_table = 'incidents'
+        ordering = ['-created_at']
+```
+
+**responses/models.py**
+```python
+from django.db import models
+from django.contrib.auth import get_user_model
+from incidents.models import Incident
+
+User = get_user_model()
+
+class ResponseTeam(models.Model):
+    incident = models.ForeignKey(Incident, on_delete=models.CASCADE, related_name='response_teams')
+    responder = models.ForeignKey(User, on_delete=models.CASCADE, related_name='assigned_incidents')
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    assigned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='assignments_made')
+    
+    notes = models.TextField(blank=True)
+    is_lead = models.BooleanField(default=False)
+    
+    class Meta:
+        db_table = 'response_teams'
+        unique_together = ['incident', 'responder']
+
+class ResponseLog(models.Model):
+    incident = models.ForeignKey(Incident, on_delete=models.CASCADE, related_name='response_logs')
+    responder = models.ForeignKey(User, on_delete=models.CASCADE)
+    
+    action = models.CharField(max_length=200)
+    details = models.TextField()
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    
+    image = models.ImageField(upload_to='response_logs/', null=True, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'response_logs'
+        ordering = ['-timestamp']
+```
+
+**notifications/models.py**
+```python
+from django.db import models
+from django.contrib.auth import get_user_model
+from incidents.models import Incident
+
+User = get_user_model()
+
+class Notification(models.Model):
+    TYPE_CHOICES = [
+        ('incident_created', 'Incident Created'),
+        ('incident_assigned', 'Incident Assigned'),
+        ('status_update', 'Status Update'),
+        ('message', 'Message'),
+    ]
+    
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    incident = models.ForeignKey(Incident, on_delete=models.CASCADE, null=True, blank=True)
+    
+    notification_type = models.CharField(max_length=30, choices=TYPE_CHOICES)
+    title = models.CharField(max_length=200)
+    message = models.TextField()
+    
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'notifications'
+        ordering = ['-created_at']
+```
+
+## Phase 3: Settings Configuration
+
+**settings.py**
+```python
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    
+    # Third-party apps
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'corsheaders',
+    'django_filters',
+    'channels',
+    
+    # Local apps
+    'accounts',
+    'incidents',
+    'responses',
+    'notifications',
+    'dashboard',
+]
+
+AUTH_USER_MODEL = 'accounts.User'
+
+MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'qrcs_db',
+        'USER': 'postgres',
+        'PASSWORD': 'your_password',
+        'HOST': 'localhost',
+        'PORT': '5432',
+    }
+}
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+    ],
+}
+
+ASGI_APPLICATION = 'qrcs_project.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [('127.0.0.1', 6379)],
+        },
+    },
+}
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+```
+
+## Phase 4: API Development
+
+### 4.1 Serializers
+
+**incidents/serializers.py**
+```python
+from rest_framework import serializers
+from .models import Incident, IncidentCategory
+from accounts.serializers import UserSerializer
+
+class IncidentCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = IncidentCategory
+        fields = '__all__'
+
+class IncidentSerializer(serializers.ModelSerializer):
+    reporter_details = UserSerializer(source='reporter', read_only=True)
+    category_details = IncidentCategorySerializer(source='category', read_only=True)
+    
+    class Meta:
+        model = Incident
+        fields = '__all__'
+        read_only_fields = ['incident_id', 'reporter', 'created_at', 'updated_at']
+    
+    def create(self, validated_data):
+        validated_data['reporter'] = self.context['request'].user
+        return super().create(validated_data)
+```
+
+### 4.2 Views
+
+**incidents/views.py**
+```python
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django_filters.rest_framework import DjangoFilterBackend
+from .models import Incident, IncidentCategory
+from .serializers import IncidentSerializer, IncidentCategorySerializer
+from notifications.utils import create_notification
+
+class IncidentViewSet(viewsets.ModelViewSet):
+    queryset = Incident.objects.all()
+    serializer_class = IncidentSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['status', 'severity', 'category']
+    
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'admin':
+            return Incident.objects.all()
+        elif user.role == 'responder':
+            return Incident.objects.filter(response_teams__responder=user)
+        else:
+            return Incident.objects.filter(reporter=user)
+    
+    def perform_create(self, serializer):
+        incident = serializer.save()
+        # Notify admins
+        create_notification(
+            recipient_role='admin',
+            incident=incident,
+            notification_type='incident_created',
+            title='New Incident Reported',
+            message=f'New incident: {incident.title}'
+        )
+    
+    @action(detail=True, methods=['post'])
+    def update_status(self, request, pk=None):
+        incident = self.get_object()
+        new_status = request.data.get('status')
+        
+        if new_status in dict(Incident.STATUS_CHOICES):
+            incident.status = new_status
+            incident.save()
+            
+            # Create notification
+            create_notification(
+                recipient=incident.reporter,
+                incident=incident,
+                notification_type='status_update',
+                title='Incident Status Updated',
+                message=f'Your incident status changed to: {new_status}'
+            )
+            
+            return Response({'status': 'success'})
+        return Response({'error': 'Invalid status'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=False, methods=['get'])
+    def nearby(self, request):
+        lat = request.query_params.get('lat')
+        lng = request.query_params.get('lng')
+        radius = request.query_params.get('radius', 5)  # km
+        
+        # Implement distance calculation
+        # This is a simplified version
+        incidents = self.get_queryset()
+        serializer = self.get_serializer(incidents, many=True)
+        return Response(serializer.data)
+```
+
+### 4.3 URLs
+
+**qrcs_project/urls.py**
+```python
+from django.contrib import admin
+from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
+from rest_framework.routers import DefaultRouter
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+from incidents.views import IncidentViewSet
+from responses.views import ResponseTeamViewSet, ResponseLogViewSet
+from notifications.views import NotificationViewSet
+
+router = DefaultRouter()
+router.register(r'incidents', IncidentViewSet, basename='incident')
+router.register(r'response-teams', ResponseTeamViewSet, basename='response-team')
+router.register(r'response-logs', ResponseLogViewSet, basename='response-log')
+router.register(r'notifications', NotificationViewSet, basename='notification')
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('api/', include(router.urls)),
+    path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/accounts/', include('accounts.urls')),
+    path('api/dashboard/', include('dashboard.urls')),
+]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+```
+
+## Phase 5: Real-time Features
+
+### 5.1 WebSocket Consumer
+
+**notifications/consumers.py**
+```python
+import json
+from channels.generic.websocket import AsyncWebsocketConsumer
+from channels.db import database_sync_to_async
+
+class NotificationConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        self.user = self.scope["user"]
+        if self.user.is_authenticated:
+            self.room_group_name = f'notifications_{self.user.id}'
+            
+            await self.channel_layer.group_add(
+                self.room_group_name,
+                self.channel_name
+            )
+            await self.accept()
+    
+    async def disconnect(self, close_code):
+        if hasattr(self, 'room_group_name'):
+            await self.channel_layer.group_discard(
+                self.room_group_name,
+                self.channel_name
+            )
+    
+    async def receive(self, text_data):
+        data = json.loads(text_data)
+        # Handle incoming messages
+    
+    async def notification_message(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'notification',
+            'data': event['data']
+        }))
+```
+
+### 5.2 Routing
+
+**qrcs_project/routing.py**
+```python
+from django.urls import re_path
+from notifications.consumers import NotificationConsumer
+
+websocket_urlpatterns = [
+    re_path(r'ws/notifications/$', NotificationConsumer.as_asgi()),
+]
+```
+
+**qrcs_project/asgi.py**
+```python
+import os
+from django.core.asgi import get_asgi_application
+from channels.routing import ProtocolTypeRouter, URLRouter
+from channels.auth import AuthMiddlewareStack
+from . import routing
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'qrcs_project.settings')
+
+application = ProtocolTypeRouter({
+    "http": get_asgi_application(),
+    "websocket": AuthMiddlewareStack(
+        URLRouter(
+            routing.websocket_urlpatterns
+        )
+    ),
+})
+```
+
+## Phase 6: Admin Panel Customization
+
+**incidents/admin.py**
+```python
+from django.contrib import admin
+from .models import Incident, IncidentCategory
+
+@admin.register(IncidentCategory)
+class IncidentCategoryAdmin(admin.ModelAdmin):
+    list_display = ['name', 'priority_level']
+    search_fields = ['name']
+
+@admin.register(Incident)
+class IncidentAdmin(admin.ModelAdmin):
+    list_display = ['incident_id', 'title', 'category', 'status', 'severity', 'created_at']
+    list_filter = ['status', 'severity', 'category', 'created_at']
+    search_fields = ['incident_id', 'title', 'description']
+    readonly_fields = ['incident_id', 'created_at', 'updated_at']
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('incident_id', 'title', 'description', 'category')
+        }),
+        ('Status & Priority', {
+            'fields': ('status', 'severity')
+        }),
+        ('Location', {
+            'fields': ('latitude', 'longitude', 'location_address')
+        }),
+        ('Metadata', {
+            'fields': ('reporter', 'image', 'created_at', 'updated_at', 'resolved_at')
+        }),
+    )
+```
+
+## Phase 7: Testing
+
+### 7.1 Unit Tests
+
+**incidents/tests.py**
+```python
+from django.test import TestCase
+from django.contrib.auth import get_user_model
+from .models import Incident, IncidentCategory
+
+User = get_user_model()
+
+class IncidentModelTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='testuser',
+            password='testpass123',
+            role='reporter'
+        )
+        self.category = IncidentCategory.objects.create(
+            name='Fire',
+            priority_level=5
+        )
+    
+    def test_incident_creation(self):
+        incident = Incident.objects.create(
+            title='Test Incident',
+            description='Test Description',
+            category=self.category,
+            reporter=self.user,
+            latitude=40.7128,
+            longitude=-74.0060,
+            location_address='Test Address'
+        )
+        self.assertTrue(incident.incident_id.startswith('INC'))
+        self.assertEqual(incident.status, 'reported')
+    
+    def test_incident_id_generation(self):
+        incident = Incident.objects.create(
+            title='Test',
+            description='Test',
+            category=self.category,
+            reporter=self.user,
+            latitude=0,
+            longitude=0,
+            location_address='Test'
+        )
+        self.assertIsNotNone(incident.incident_id)
+```
+
+## Phase 8: Deployment
+
+### 8.1 Requirements File
+
+**requirements.txt**
+```
+Django==5.0.1
+djangorestframework==3.14.0
+djangorestframework-simplejwt==5.3.1
+django-cors-headers==4.3.1
+django-filter==23.5
+psycopg2-binary==2.9.9
+Pillow==10.2.0
+celery==5.3.6
+redis==5.0.1
+django-celery-beat==2.5.0
+channels==4.0.0
+channels-redis==4.1.0
+daphne==4.0.0
+gunicorn==21.2.0
+python-decouple==3.8
+```
+
+### 8.2 Production Settings
+
+**settings_prod.py**
+```python
+from .settings import *
+from decouple import config
+
+DEBUG = False
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=lambda v: [s.strip() for s in v.split(',')])
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': config('DB_NAME'),
+        'USER': config('DB_USER'),
+        'PASSWORD': config('DB_PASSWORD'),
+        'HOST': config('DB_HOST'),
+        'PORT': config('DB_PORT', default='5432'),
+    }
+}
+
+# Security settings
+SECURE_SSL_REDIRECT = True
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+SECURE_BROWSER_XSS_FILTER = True
+```
+
+### 8.3 Docker Configuration
+
+**Dockerfile**
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN python manage.py collectstatic --noinput
+
+EXPOSE 8000
+
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "qrcs_project.asgi:application"]
+```
+
+**docker-compose.yml**
+```yaml
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: qrcs_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+
+  web:
+    build: .
+    command: daphne -b 0.0.0.0 -p 8000 qrcs_project.asgi:application
+    volumes:
+      - .:/app
+      - media_volume:/app/media
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DEBUG=0
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/qrcs_db
+
+  celery:
+    build: .
+    command: celery -A qrcs_project worker -l info
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - redis
+
+volumes:
+  postgres_data:
+  media_volume:
+```
+
+## Phase 9: Execution Steps
+
+### Step-by-Step Implementation
+
+```bash
+# 1. Create project structure
+django-admin startproject qrcs_project
+cd qrcs_project
+python manage.py startapp accounts incidents responses notifications dashboard
+
+# 2. Set up database
+createdb qrcs_db
+
+# 3. Configure settings (update settings.py as shown above)
+
+# 4. Create models in each app
+
+# 5. Make migrations
+python manage.py makemigrations
+python manage.py migrate
+
+# 6. Create superuser
+python manage.py createsuperuser
+
+# 7. Create serializers and views
+
+# 8. Configure URLs
+
+# 9. Set up WebSockets (consumers, routing)
+
+# 10. Run development server
+python manage.py runserver
+
+# 11. Run Celery (in separate terminal)
+celery -A qrcs_project worker -l info
+
+# 12. Run tests
+python manage.py test
+
+# 13. Collect static files
+python manage.py collectstatic
+
+# 14. Deploy with Docker
+docker-compose up -d
+```
+
+## Phase 10: Additional Features
+
+### 10.1 Email Notifications
+```python
+# notifications/utils.py
+from django.core.mail import send_mail
+from django.conf import settings
+
+def send_incident_email(incident, recipients):
+    subject = f'New Incident: {incident.title}'
+    message = f'Incident ID: {incident.incident_id}\n\n{incident.description}'
+    send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, recipients)
+```
+
+### 10.2 SMS Integration (Twilio)
+```python
+from twilio.rest import Client
+
+def send_sms_alert(phone_number, message):
+    client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+    message = client.messages.create(
+        body=message,
+        from_=settings.TWILIO_PHONE_NUMBER,
+        to=phone_number
+    )
+    return message.sid
+```
+
+### 10.3 Analytics Dashboard
+```python
+# dashboard/views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from incidents.models import Incident
+from django.db.models import Count, Q
+from datetime import datetime, timedelta
+
+class DashboardStatsView(APIView):
+    def get(self, request):
+        now = datetime.now()
+        last_30_days = now - timedelta(days=30)
+        
+        stats = {
+            'total_incidents': Incident.objects.count(),
+            'active_incidents': Incident.objects.filter(
+                status__in=['reported', 'assigned', 'in_progress']
+            ).count(),
+            'resolved_today': Incident.objects.filter(
+                resolved_at__date=now.date()
+            ).count(),
+            'by_severity': Incident.objects.values('severity').annotate(
+                count=Count('id')
+            ),
+            'by_status': Incident.objects.values('status').annotate(
+                count=Count('id')
+            ),
+            'trend': Incident.objects.filter(
+                created_at__gte=last_30_days
+            ).extra(select={'day': 'date(created_at)'}).values('day').annotate(
+                count=Count('id')
+            ).order_by('day')
+        }
+        
+        return Response(stats)
+```
+
+## Project Timeline
+
+**Week 1-2:** Setup, database design, basic models
+**Week 3-4:** API development, authentication
+**Week 5-6:** Real-time features, notifications
+**Week 7:** Admin panel, testing
+**Week 8:** Deployment, documentation
+
+## Documentation
+
+Create comprehensive documentation including:
+- API documentation (use drf-spectacular)
+- User guide
+- Admin manual
+- Deployment guide
+- Architecture diagrams
+
+This complete

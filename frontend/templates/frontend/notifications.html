@@ -1,0 +1,91 @@
+{% extends 'frontend/base.html' %}
+
+{% block title %}Notifications - QRCS{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="bi bi-bell"></i> Notifications</h2>
+                <a href="{% url 'frontend:homepage' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back to Home
+                </a>
+            </div>
+
+            {% if notifications %}
+            <div class="card">
+                <div class="list-group list-group-flush">
+                    {% for notification in notifications %}
+                    <div class="list-group-item {% if not notification.is_read %}bg-light{% endif %}">
+                        <div class="d-flex w-100 justify-content-between">
+                            <div class="flex-grow-1">
+                                <h5 class="mb-1">
+                                    {% if not notification.is_read %}
+                                    <span class="badge bg-primary me-2">New</span>
+                                    {% endif %}
+                                    {{ notification.title }}
+                                </h5>
+                                <p class="mb-1">{{ notification.message }}</p>
+                                {% if notification.incident %}
+                                <small class="text-muted">
+                                    <i class="bi bi-link-45deg"></i> 
+                                    <a href="{% url 'frontend:incident_detail' notification.incident.id %}">
+                                        View Incident: {{ notification.incident.incident_id }}
+                                    </a>
+                                </small>
+                                {% endif %}
+                            </div>
+                            <div class="text-end">
+                                <small class="text-muted">{{ notification.created_at|date:"M d, Y H:i" }}</small>
+                                <br>
+                                <small class="text-muted">{{ notification.created_at|timesince }} ago</small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            {% if notifications.has_other_pages %}
+            <nav aria-label="Page navigation" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    {% if notifications.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ notifications.previous_page_number }}">Previous</a>
+                    </li>
+                    {% endif %}
+                    
+                    {% for num in notifications.paginator.page_range %}
+                    {% if notifications.number == num %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ num }}</span>
+                    </li>
+                    {% elif num > notifications.number|add:'-3' and num < notifications.number|add:'3' %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                    </li>
+                    {% endif %}
+                    {% endfor %}
+                    
+                    {% if notifications.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ notifications.next_page_number }}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+
+            {% else %}
+            <div class="alert alert-info text-center">
+                <i class="bi bi-bell-slash"></i> You have no notifications at this time.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+

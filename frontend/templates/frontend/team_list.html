@@ -1,0 +1,102 @@
+{% extends 'frontend/base.html' %}
+
+{% block title %}Response Teams - QRCS{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="bi bi-people"></i> Response Teams</h2>
+                <span class="badge bg-primary">{{ total_teams }} Teams</span>
+            </div>
+
+            {% if teams %}
+            <div class="row">
+                {% for team_data in teams %}
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card incident-card h-100">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0">
+                                <i class="bi bi-person-badge"></i> {{ team_data.responder.username }}
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <strong><i class="bi bi-envelope"></i> Email:</strong>
+                                <p class="mb-0">{{ team_data.responder.email|default:"Not provided" }}</p>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <strong><i class="bi bi-briefcase"></i> Role:</strong>
+                                <span class="badge bg-info">{{ team_data.responder.get_role_display }}</span>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <strong><i class="bi bi-list-check"></i> Total Assignments:</strong>
+                                <h4 class="text-primary mb-0">{{ team_data.total_assignments }}</h4>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <strong><i class="bi bi-check-circle"></i> Status:</strong>
+                                {% if team_data.responder.is_available %}
+                                <span class="badge bg-success">Available</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Unavailable</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="card-footer bg-white">
+                            <div class="d-grid gap-2">
+                                <a href="{% url 'frontend:team_detail' team_data.teams.0.id %}" class="btn btn-primary btn-sm">
+                                    <i class="bi bi-eye"></i> View Details
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Pagination -->
+            {% if teams.has_other_pages %}
+            <nav aria-label="Page navigation" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    {% if teams.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ teams.previous_page_number }}">Previous</a>
+                    </li>
+                    {% endif %}
+                    
+                    {% for num in teams.paginator.page_range %}
+                    {% if teams.number == num %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ num }}</span>
+                    </li>
+                    {% elif num > teams.number|add:'-3' and num < teams.number|add:'3' %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                    </li>
+                    {% endif %}
+                    {% endfor %}
+                    
+                    {% if teams.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ teams.next_page_number }}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+
+            {% else %}
+            <div class="alert alert-info text-center">
+                <i class="bi bi-info-circle"></i> No response teams found.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+

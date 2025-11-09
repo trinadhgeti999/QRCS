@@ -1,0 +1,166 @@
+{% extends 'frontend/base.html' %}
+
+{% block title %}{{ incident.title }} - QRCS{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <div class="row">
+        <div class="col-lg-8">
+            <!-- Incident Header -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h4 class="mb-0"><i class="bi bi-exclamation-triangle"></i> {{ incident.title }}</h4>
+                        <span class="badge bg-light text-dark">{{ incident.incident_id }}</span>
+                    </div>
+                </div>
+                {% if incident.image %}
+                <img src="{{ incident.image.url }}" class="card-img-top" alt="{{ incident.title }}" style="max-height: 400px; object-fit: cover;">
+                {% endif %}
+                <div class="card-body">
+                    <p class="card-text">{{ incident.description }}</p>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong><i class="bi bi-tag"></i> Category:</strong>
+                            <span class="badge bg-info">{{ incident.category.name }}</span>
+                        </div>
+                        <div class="col-md-6">
+                            <strong><i class="bi bi-flag"></i> Status:</strong>
+                            <span class="badge bg-{% if incident.status == 'resolved' %}success{% elif incident.status == 'closed' %}secondary{% elif incident.status == 'in_progress' %}warning{% else %}primary{% endif %}">
+                                {{ incident.get_status_display }}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong><i class="bi bi-exclamation-circle"></i> Severity:</strong>
+                            <span class="badge bg-{% if incident.severity == 'critical' %}danger{% elif incident.severity == 'high' %}warning{% elif incident.severity == 'medium' %}info{% else %}secondary{% endif %}">
+                                {{ incident.get_severity_display }}
+                            </span>
+                        </div>
+                        <div class="col-md-6">
+                            <strong><i class="bi bi-person"></i> Reporter:</strong>
+                            {{ incident.reporter.username }}
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <strong><i class="bi bi-geo-alt"></i> Location:</strong>
+                            <p class="mb-1">{{ incident.location_address }}</p>
+                            <small class="text-muted">Coordinates: {{ incident.latitude }}, {{ incident.longitude }}</small>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <strong><i class="bi bi-calendar-plus"></i> Reported:</strong>
+                            <p class="mb-0">{{ incident.created_at|date:"F d, Y H:i" }}</p>
+                        </div>
+                        {% if incident.resolved_at %}
+                        <div class="col-md-6">
+                            <strong><i class="bi bi-check-circle"></i> Resolved:</strong>
+                            <p class="mb-0 text-success">{{ incident.resolved_at|date:"F d, Y H:i" }}</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Response Logs -->
+            {% if response_logs %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-journal-text"></i> Response Activity</h5>
+                </div>
+                <div class="card-body">
+                    <div class="timeline">
+                        {% for log in response_logs %}
+                        <div class="border-start border-3 border-primary ps-3 mb-3">
+                            <div class="d-flex justify-content-between">
+                                <strong>{{ log.action }}</strong>
+                                <small class="text-muted">{{ log.timestamp|timesince }} ago</small>
+                            </div>
+                            <p class="mb-1">{{ log.details }}</p>
+                            <small class="text-muted">
+                                <i class="bi bi-person"></i> {{ log.responder.username }}
+                                {% if log.latitude and log.longitude %}
+                                | <i class="bi bi-geo-alt"></i> {{ log.latitude }}, {{ log.longitude }}
+                                {% endif %}
+                            </small>
+                            {% if log.image %}
+                            <div class="mt-2">
+                                <img src="{{ log.image.url }}" class="img-thumbnail" style="max-width: 200px;" alt="Response image">
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Status Update Button (for admins and responders only) -->
+            {% if can_update_status %}
+            <div class="card">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0"><i class="bi bi-arrow-repeat"></i> Update Status</h5>
+                </div>
+                <div class="card-body">
+                    <a href="{% url 'frontend:update_status' incident.id %}" class="btn btn-primary">
+                        <i class="bi bi-pencil-square"></i> Update Incident Status
+                    </a>
+                    <p class="text-muted mt-2 mb-0">
+                        <i class="bi bi-shield-check"></i> Only admins and assigned responders can update incident status.
+                    </p>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-lg-4">
+            <!-- Response Teams -->
+            {% if response_teams %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-people"></i> Response Team</h5>
+                </div>
+                <div class="card-body">
+                    {% for team in response_teams %}
+                    <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+                        <div>
+                            <strong>{{ team.responder.username }}</strong>
+                            {% if team.is_lead %}
+                            <span class="badge bg-warning text-dark">Lead</span>
+                            {% endif %}
+                            <br>
+                            <small class="text-muted">Assigned {{ team.assigned_at|timesince }} ago</small>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Quick Actions -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-lightning"></i> Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <a href="{% url 'frontend:report_incident' %}" class="btn btn-primary w-100 mb-2">
+                        <i class="bi bi-plus-circle"></i> Report New Incident
+                    </a>
+                    <a href="{% url 'frontend:homepage' %}" class="btn btn-outline-secondary w-100">
+                        <i class="bi bi-arrow-left"></i> Back to Home
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
